@@ -16,7 +16,7 @@ Database:
 Email:
 
 - `RESEND_API_KEY`: API key for Resend
-- `EMAIL_FROM`: e.g. `Candidate Code <noreply@yourdomain.com>`
+- `EMAIL_FROM`: onboarding@resend.dev (this is the free option, otherwise put in your own domain)
 
 Frontend URL used in emails:
 
