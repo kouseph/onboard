@@ -41,8 +41,17 @@ class Assessment(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
     archived = Column(Boolean, nullable=False, default=False)
 
-    seed_repo = relationship("SeedRepo", back_populates="assessment", uselist=False)
-    invites = relationship("AssessmentInvite", back_populates="assessment")
+    seed_repo = relationship(
+        "SeedRepo",
+        back_populates="assessment",
+        uselist=False,
+        passive_deletes=True,  # let DB ON DELETE CASCADE handle child row
+    )
+    invites = relationship(
+        "AssessmentInvite",
+        back_populates="assessment",
+        passive_deletes=True,  # let DB ON DELETE CASCADE remove invites
+    )
 
 
 class Candidate(Base):
@@ -71,7 +80,11 @@ class AssessmentInvite(Base):
     submitted_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), nullable=False)
 
-    assessment = relationship("Assessment", back_populates="invites")
+    assessment = relationship(
+        "Assessment",
+        back_populates="invites",
+        passive_deletes=True,
+    )
     candidate = relationship("Candidate", back_populates="invites")
     candidate_repo = relationship(
         "CandidateRepo",
@@ -92,7 +105,11 @@ class SeedRepo(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
-    assessment = relationship("Assessment", back_populates="seed_repo")
+    assessment = relationship(
+        "Assessment",
+        back_populates="seed_repo",
+        passive_deletes=True,
+    )
 
 
 class CandidateRepo(Base):
