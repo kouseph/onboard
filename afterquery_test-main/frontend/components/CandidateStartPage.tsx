@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/utils/api";
-import { useMemo } from "react";
 
 export type StartMeta = {
   assessment: { title: string; instructions?: string | null; seed_repo_url: string; branch: string };
@@ -17,6 +16,8 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
   const [git, setGit] = useState<{ clone_url: string; branch: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
+  const [showTimer, setShowTimer] = useState(true);
 
   const [commitLoading, setCommitLoading] = useState(false);
   const [commits, setCommits] = useState<any[]>([]);
@@ -59,6 +60,53 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
       setCommits([]);
     }
   }, [meta, slug]);
+
+  // Calculate time remaining countdown
+  useEffect(() => {
+    if (meta?.invite.status === "submitted") {
+      setTimeRemaining(null);
+      return;
+    }
+
+    // Determine which deadline to use
+    const deadlineStr = meta?.invite.status === "started" 
+      ? meta.invite.complete_deadline_at 
+      : meta?.invite.start_deadline_at;
+
+    if (!deadlineStr) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const deadline = new Date(deadlineStr).getTime();
+      const now = new Date().getTime();
+      const diff = deadline - now;
+
+      if (diff <= 0) {
+        setTimeRemaining(meta?.invite.status === "started" ? "Time expired" : "Start deadline passed");
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      const parts: string[] = [];
+      if (days > 0) parts.push(`${days}d`);
+      if (hours > 0 || days > 0) parts.push(`${hours}h`);
+      if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+      parts.push(`${seconds}s`);
+
+      setTimeRemaining(parts.join(" "));
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [meta?.invite.complete_deadline_at, meta?.invite.start_deadline_at, meta?.invite.status]);
 
   async function handleStart() {
     try {
@@ -110,6 +158,63 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
         }</span>
         {invite.started_at && <span className="text-xs text-gray-500">Started on {new Date(invite.started_at).toLocaleString()}</span>}
       </div>
+
+      {/* Time remaining */}
+      {timeRemaining && (
+        <>
+          {showTimer && (() => {
+            let colorClass = "bg-blue-50 border-blue-300 text-blue-700";
+            if (timeRemaining === "Time expired" || timeRemaining === "Start deadline passed") {
+              colorClass = "bg-red-50 border-red-300 text-red-700";
+            } else {
+              // Extract hours from the time string (format: "Xd Xh Xm Xs" or "Xh Xm Xs" or "Xm Xs")
+              const hoursMatch = timeRemaining.match(/(\d+)h/);
+              const hours = hoursMatch ? parseInt(hoursMatch[1]) : 0;
+              const daysMatch = timeRemaining.match(/(\d+)d/);
+              const hasDays = daysMatch !== null;
+              
+              if (hasDays || hours >= 24) {
+                colorClass = "bg-blue-50 border-blue-300 text-blue-700";
+              } else if (hours >= 1) {
+                colorClass = "bg-yellow-50 border-yellow-300 text-yellow-700";
+              } else {
+                colorClass = "bg-red-50 border-red-300 text-red-700";
+              }
+            }
+            
+            const label = meta?.invite.status === "started" ? "Time Remaining:" : "Time to Start:";
+            
+            return (
+              <div className={`px-4 py-2 rounded-lg border-2 ${colorClass}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{label}</span>
+                    <span className="font-mono text-lg">{timeRemaining}</span>
+                  </div>
+                  <button
+                    onClick={() => setShowTimer(false)}
+                    className="px-2 py-1 rounded text-xs font-medium border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                    title="Hide timer"
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+          {!showTimer && (
+            <div className="mb-2">
+              <button
+                onClick={() => setShowTimer(true)}
+                className="px-3 py-1.5 rounded text-sm font-medium border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                title="Show timer"
+              >
+                Show Timer
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Title and repo info */}
       <h2 className="text-2xl font-bold mb-1">{assessment.title}</h2>
