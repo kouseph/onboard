@@ -9,10 +9,7 @@ load_dotenv()
 
 def _resolve_database_url() -> str:
     # Prefer explicit Supabase DB URL if provided, else fallback to DATABASE_URL, else local default
-    url = os.getenv("SUPABASE_DB_URL") or os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/candidate_code",
-    )
+    url = os.getenv("SUPABASE_DB_URL")
     # Ensure sslmode=require for Supabase
     if "supabase.co" in url and "sslmode=" not in url:
         separator = "&" if "?" in url else "?"
