@@ -7,6 +7,7 @@ import { useMemo } from "react";
 export type StartMeta = {
   assessment: { title: string; instructions?: string | null; seed_repo_url: string; branch: string };
   invite: { status: string; start_deadline_at?: string | null; complete_deadline_at?: string | null; started_at?: string | null; submitted_at?: string | null };
+  git?: { clone_url: string; branch: string };
 };
 
 export default function CandidateStartPage({ slug }: { slug: string }) {
@@ -22,8 +23,24 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
 
   useEffect(() => {
     api.get<StartMeta>(`/api/candidate/start/${slug}`)
-      .then(setMeta)
-      .catch((e) => setError(e?.message || "Failed to load"))
+      .then((data) => {
+        console.log("GET response:", data);
+        setMeta(data);
+        // If git info is included in the response, set it
+        if (data.git && data.git.clone_url) {
+          console.log("Setting git info:", data.git);
+          setGit(data.git);
+        } else {
+          console.log("No git info in response");
+          // If status is started/submitted but no git info, clear git state
+          // (this shouldn't happen, but handle gracefully)
+          setGit(null);
+        }
+      })
+      .catch((e) => {
+        console.error("Error fetching start page:", e);
+        setError(e?.message || "Failed to load");
+      })
       .finally(() => setLoading(false));
   }, [slug]);
 
@@ -61,8 +78,11 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
       await api.post(`/api/candidate/submit/${slug}`);
       const m = await api.get<StartMeta>(`/api/candidate/start/${slug}`);
       setMeta(m);
+      // Extract git info from refreshed meta
+      if (m.git) {
+        setGit(m.git);
+      }
       setSuccess("Your assessment has been submitted successfully. The client will review and follow up shortly.");
-      setGit(null);
     } catch (e: any) {
       setError(e?.message || "Failed to submit");
     }
@@ -95,7 +115,7 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
       <div className="text-xs text-gray-500 mb-2">Seed: {assessment.seed_repo_url} · Branch: {assessment.branch}</div>
 
       {/* Clone command */}
-      {git ? (
+      {git && git.clone_url ? (
         <section>
           <div className="font-semibold mb-1">A git repository has been created for you. Clone it with:</div>
           <div className="bg-gray-100 p-3 rounded flex items-center text-sm">
@@ -103,7 +123,13 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
           </div>
           <div className="text-xs text-gray-500 mt-2">Once complete, ensure your work is committed and pushed to the <span className="font-bold">main</span> branch.</div>
         </section>
-      ) : null}
+      ) : invite.status === "pending" ? null : (
+        <section>
+          <div className="text-gray-500 text-sm">
+            {"Check your GitHub repositories. It will be the latest generated one."}
+          </div>
+        </section>
+      )}
 
       {/* Instructions */}
       <section>
