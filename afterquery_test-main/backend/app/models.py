@@ -73,7 +73,12 @@ class AssessmentInvite(Base):
 
     assessment = relationship("Assessment", back_populates="invites")
     candidate = relationship("Candidate", back_populates="invites")
-    candidate_repo = relationship("CandidateRepo", back_populates="invite", uselist=False)
+    candidate_repo = relationship(
+        "CandidateRepo",
+        back_populates="invite",
+        uselist=False,
+        passive_deletes=True,  # delegate FK cascade deletes to the database
+    )
     submission = relationship("Submission", back_populates="invite", uselist=False)
 
 
@@ -101,8 +106,16 @@ class CandidateRepo(Base):
     archived = Column(Boolean, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
-    invite = relationship("AssessmentInvite", back_populates="candidate_repo")
-    access_tokens = relationship("RepoAccessToken", back_populates="candidate_repo")
+    invite = relationship(
+        "AssessmentInvite",
+        back_populates="candidate_repo",
+        passive_deletes=True,  # don't null FK; let DB ON DELETE CASCADE handle it
+    )
+    access_tokens = relationship(
+        "RepoAccessToken",
+        back_populates="candidate_repo",
+        passive_deletes=True,  # rely on DB cascade; don't null FKs
+    )
 
 
 class RepoAccessToken(Base):
@@ -115,7 +128,11 @@ class RepoAccessToken(Base):
     revoked_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), nullable=False)
 
-    candidate_repo = relationship("CandidateRepo", back_populates="access_tokens")
+    candidate_repo = relationship(
+        "CandidateRepo",
+        back_populates="access_tokens",
+        passive_deletes=True,
+    )
 
 
 class Submission(Base):

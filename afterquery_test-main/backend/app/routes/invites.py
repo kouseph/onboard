@@ -6,6 +6,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import os
 import resend
 
@@ -129,8 +130,55 @@ def cancel_invite(invite_id: str, db: Session = Depends(get_db)):
     #         detail="Cannot cancel a submitted assessment. Contact an administrator if needed."
     #     )
     
-    db.delete(invite)
-    db.commit()
-    
-    return {"status": "deleted", "message": "Assignment cancelled successfully"}
+    try:
+        # Proactively delete dependent rows that maintain NOT NULL FKs to invite
+        # even though DB has ON DELETE CASCADE, some ORM paths can attempt to null first.
+        cand_repo = (
+            db.query(models.CandidateRepo)
+            .filter(models.CandidateRepo.invite_id == invite.id)
+            .first()
+        )
+        if cand_repo:
+            # Proactively delete tokens referencing the candidate repo to avoid NOT NULL FK updates
+            db.query(models.RepoAccessToken).filter(
+                models.RepoAccessToken.candidate_repo_id == cand_repo.id
+            ).delete(synchronize_session=False)
+            db.flush()
+            # Now delete the candidate repo
+            db.delete(cand_repo)
+            db.flush()
+
+        # Submissions reference invite with UNIQUE FK; delete if present
+        submission = (
+            db.query(models.Submission)
+            .filter(models.Submission.invite_id == invite.id)
+            .first()
+        )
+        if submission:
+            db.delete(submission)
+            db.flush()
+
+        # Clean up comment threads and follow-up emails tied to the invite
+        db.query(models.ReviewInlineComment).filter(
+            models.ReviewInlineComment.invite_id == invite.id
+        ).delete(synchronize_session=False)
+        db.query(models.ReviewComment).filter(
+            models.ReviewComment.invite_id == invite.id
+        ).delete(synchronize_session=False)
+        db.query(models.FollowUpEmail).filter(
+            models.FollowUpEmail.invite_id == invite.id
+        ).delete(synchronize_session=False)
+        db.flush()
+
+        # Now delete the invite; remaining dependents will cascade
+        db.delete(invite)
+        db.commit()
+        return {"status": "deleted", "message": "Assignment cancelled successfully"}
+    except IntegrityError as e:
+        db.rollback()
+        # Surface a helpful error; cascades should normally handle dependents
+        raise HTTPException(status_code=409, detail=f"Cannot delete invite due to related records: {str(e.orig)}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error while deleting invite: {str(e)}")
 
