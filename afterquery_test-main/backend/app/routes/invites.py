@@ -56,18 +56,30 @@ def create_invite(payload: InviteCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(invite)
 
-    # Send invite email immediately after creation
-    assessment_title = assessment.title
-    candidate = db.query(models.Candidate).get(invite.candidate_id)
-    public_base = os.getenv("PUBLIC_APP_BASE_URL", "http://localhost:3000")
-    start_link = f"{public_base}/candidate/{invite.start_url_slug}"
+    # Send invite email immediately after creation (best-effort; don't fail invite creation)
+    try:
+        assessment_title = assessment.title
+        candidate = db.query(models.Candidate).get(invite.candidate_id)
+        public_base = os.getenv("PUBLIC_APP_BASE_URL", "http://localhost:3000")
+        start_link = f"{public_base}/candidate/{invite.start_url_slug}"
 
-    resend.Emails.send({
-        "from": os.getenv("EMAIL_FROM"),
-        "to": [candidate.email],
-        "subject": f"Assessment Invitation: {assessment_title}",
-        "html": invite_email_html(candidate.full_name, assessment_title, start_link),
-    })
+        # Configure Resend only if API key is present
+        api_key = os.getenv("RESEND_API_KEY")
+        from_addr = os.getenv("EMAIL_FROM")
+        if api_key and from_addr:
+            resend.api_key = api_key
+            resend.Emails.send({
+                "from": from_addr,
+                "to": [candidate.email],
+                "subject": f"Assessment Invitation: {assessment_title}",
+                "html": invite_email_html(candidate.full_name, assessment_title, start_link),
+            })
+        else:
+            # Missing email configuration; proceed without sending
+            print("[invite email] Skipped sending: RESEND_API_KEY or EMAIL_FROM not set")
+    except Exception as e:
+        # Log and proceed; we don't want email failures to block API
+        print(f"[invite email] Failed to send: {e}")
 
     return invite
 
