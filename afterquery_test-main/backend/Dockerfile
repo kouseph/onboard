@@ -8,11 +8,11 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install Python dependencies
-COPY backend/requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy backend source
-COPY backend/ /app
+COPY . /app
 
 # Expose port (Railway sets PORT variable dynamically)
 ENV PORT=8000
