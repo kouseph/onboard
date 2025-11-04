@@ -8,8 +8,8 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install Python dependencies
-COPY requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+COPY requirements.txt /app/afterquery_test-main/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/afterquery_test-main/backend/requirements.txt
 
 # Copy backend source
 COPY . /app
