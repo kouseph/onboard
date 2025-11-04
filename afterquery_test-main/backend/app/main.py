@@ -5,6 +5,7 @@ app = FastAPI(title="Backend API")
 
 origins = [
     "https://afterquery-test.vercel.app",
+    "https://onboard-dun.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
