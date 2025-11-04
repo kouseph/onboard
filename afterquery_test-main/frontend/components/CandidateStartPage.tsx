@@ -16,6 +16,7 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [git, setGit] = useState<{ clone_url: string; branch: string } | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [commitLoading, setCommitLoading] = useState(false);
   const [commits, setCommits] = useState<any[]>([]);
@@ -118,8 +119,29 @@ export default function CandidateStartPage({ slug }: { slug: string }) {
       {git && git.clone_url ? (
         <section>
           <div className="font-semibold mb-1">A git repository has been created for you. Clone it with:</div>
-          <div className="bg-gray-100 p-3 rounded flex items-center text-sm">
-            <code className="whitespace-nowrap overflow-x-auto">{`git clone ${git.clone_url}`}</code>
+          <div className="bg-gray-100 p-3 rounded flex items-center gap-2 text-sm">
+            <code className="whitespace-nowrap overflow-x-auto flex-1">{`git clone ${git.clone_url}`}</code>
+            <button
+              onClick={async () => {
+                const cloneCommand = `git clone ${git.clone_url}`;
+                try {
+                  await navigator.clipboard.writeText(cloneCommand);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } catch (err) {
+                  console.error("Failed to copy:", err);
+                  alert("Failed to copy to clipboard");
+                }
+              }}
+              className={`px-3 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${
+                copied
+                  ? "bg-green-500 text-white"
+                  : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+              }`}
+              title="Copy to clipboard"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
           </div>
           <div className="text-xs text-gray-500 mt-2">Once complete, ensure your work is committed and pushed to the <span className="font-bold">main</span> branch.</div>
         </section>

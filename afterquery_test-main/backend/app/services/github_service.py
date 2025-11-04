@@ -196,3 +196,15 @@ class GitHubService:
             return result
 
 
+    def set_repo_visibility(self, repo_full_name: str, private: bool) -> None:
+        """
+        Update repository visibility. When private=True, repo becomes private.
+        """
+        owner, repo = repo_full_name.split("/")
+        with self._client() as c:
+            r = c.patch(
+                f"/repos/{owner}/{repo}",
+                json={"private": private},
+            )
+            r.raise_for_status()
+

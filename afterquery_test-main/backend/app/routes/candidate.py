@@ -45,7 +45,7 @@ def get_git_clone_info(cand_repo: models.CandidateRepo, invite: models.Assessmen
     db.add(token_row)
     db.commit()
     
-    clone_url = f"https://github.com/{cand_repo.repo_full_name}.git?token={token_plain}"
+    clone_url = f"https://github.com/{cand_repo.repo_full_name}.git"
     
     return {
         "clone_url": clone_url,
@@ -186,6 +186,17 @@ def submit_assessment(slug: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Candidate repo not found")
 
     now = datetime.utcnow()
+
+    # Ensure the candidate repo is private upon submission
+    try:
+        gh = GitHubService()
+        gh.set_repo_visibility(cand_repo.repo_full_name, private=True)
+    except RuntimeError as e:
+        # GitHub not configured; proceed but inform client
+        raise HTTPException(status_code=500, detail=f"GitHub configuration error: {str(e)}")
+    except Exception as e:
+        # Upstream error; surface as bad gateway
+        raise HTTPException(status_code=502, detail=f"Failed to update repo visibility: {str(e)}")
 
     # revoke tokens
     tokens = db.query(models.RepoAccessToken).filter(models.RepoAccessToken.candidate_repo_id == cand_repo.id, models.RepoAccessToken.revoked_at.is_(None)).all()

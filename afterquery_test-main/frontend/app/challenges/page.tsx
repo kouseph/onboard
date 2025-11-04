@@ -17,12 +17,88 @@ export default function ChallengesPage() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [activeTab, setActiveTab] = useState<"available" | "archived">("available");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Modal state for edit actions (delete or overwrite repo URL)
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalAssessment, setModalAssessment] = useState<Assessment | null>(null);
+  // Modal states
+  const [newRepoUrl, setNewRepoUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Fetch assessments whenever the active tab changes
   useEffect(() => {
     const fetch = activeTab === "available" ? fetchAvailableAssessments : fetchArchivedAssessments;
-    fetch().then(setAssessments).catch(() => setAssessments([]));
+    setError(null);
+    fetch().then(setAssessments).catch((e: any) => {
+      setAssessments([]);
+      setError(e?.message || "Failed to load challenges");
+    });
   }, [activeTab]);
+
+  function openActionsModal(a: Assessment) {
+    setModalAssessment(a);
+    setNewRepoUrl("");
+    setConfirmName("");
+    setShowDeleteConfirm(false);
+    setModalOpen(true);
+  }
+
+  function openDeleteModal(a: Assessment) {
+    setModalAssessment(a);
+    setNewRepoUrl("");
+    setConfirmName("");
+    setShowDeleteConfirm(true);
+    setModalOpen(true);
+  }
+
+  function closeActionsModal() {
+    setModalOpen(false);
+    setModalAssessment(null);
+    setNewRepoUrl("");
+    setConfirmName("");
+    setShowDeleteConfirm(false);
+  }
+
+  async function handleModalDelete() {
+    if (!modalAssessment) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.delete(`/api/assessments/${modalAssessment.id}`);
+      setAssessments(prev => prev.filter(a => a.id !== modalAssessment.id));
+      closeActionsModal();
+    } catch (e: any) {
+      setError(e?.message || "Failed to delete challenge");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleModalOverwrite() {
+    if (!modalAssessment) return;
+    const url = newRepoUrl.trim();
+    if (!url) {
+      setError("Please provide a GitHub repo URL to overwrite with");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.put<Assessment>(`/api/assessments/${modalAssessment.id}`, {
+        seed_repo_url: url,
+      });
+      setAssessments(prev => prev.map(a => (a.id === updated.id ? updated : a)));
+      closeActionsModal();
+    } catch (e: any) {
+      setError(e?.message || "Failed to overwrite repository URL");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <main>
@@ -40,7 +116,9 @@ export default function ChallengesPage() {
         </div>
       )} */}
 
-      <h1 className="text-3xl font-semibold mb-6 text-gray-800">Challenges</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-semibold text-gray-800">Challenges</h1>
+      </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-8 shadow-sm">
         <p className="mb-4 text-gray-700">To create a new challenge click below:</p>
@@ -88,6 +166,9 @@ export default function ChallengesPage() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          {error ? (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded mb-4">{error}</div>
+          ) : null}
           {assessments.length === 0 ? (
             <div className="text-center py-10 px-5">
               <p className="text-base font-semibold mb-2 text-gray-800">
@@ -139,18 +220,34 @@ export default function ChallengesPage() {
                           >
                             Archive
                           </button>
+                          <button
+                            onClick={() => openActionsModal(a)}
+                            className="bg-white hover:bg-gray-50 text-gray-800 text-sm px-3 py-1.5 rounded-md border border-gray-300 cursor-pointer"
+                            title="Edit challenge"
+                          >
+                            Edit
+                          </button>
                         </>
                       ) : (
-                        <button
-                          onClick={async () => {
-                            await api.put<Assessment>(`/api/assessments/${a.id}/unarchive`);
-                            const updated = await fetchArchivedAssessments();
-                            setAssessments(updated);
-                          }}
-                          className="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm px-3 py-1.5 rounded-md border border-gray-300 cursor-pointer"
-                        >
-                          Unarchive
-                        </button>
+                        <>
+                          <button
+                            onClick={async () => {
+                              await api.put<Assessment>(`/api/assessments/${a.id}/unarchive`);
+                              const updated = await fetchArchivedAssessments();
+                              setAssessments(updated);
+                            }}
+                            className="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm px-3 py-1.5 rounded-md border border-gray-300 cursor-pointer"
+                          >
+                            Unarchive
+                          </button>
+                          <button
+                            onClick={() => openDeleteModal(a)}
+                            className="bg-white hover:bg-gray-50 text-red-700 text-sm px-3 py-1.5 rounded-md border border-red-200 cursor-pointer"
+                            title="Delete challenge"
+                          >
+                            Delete
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -160,6 +257,75 @@ export default function ChallengesPage() {
           )}
         </div>
       </div>
+
+      {modalOpen && modalAssessment ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={closeActionsModal} />
+          <div className="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-xl border border-gray-200 p-5">
+            <h3 className="text-lg font-semibold mb-2">Manage “{modalAssessment.title}”</h3>
+            <p className="text-sm text-gray-600 mb-4">Choose an action below. Overwriting will replace the seed GitHub repository URL used for new invites.</p>
+
+            <div className="grid gap-3 mb-4">
+              {!showDeleteConfirm ? (
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm font-medium">Overwrite with new GitHub repo URL</span>
+                  <input
+                    value={newRepoUrl}
+                    onChange={e => setNewRepoUrl(e.target.value)}
+                    placeholder="https://github.com/org/repo"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </label>
+              ) : null}
+              {showDeleteConfirm ? (
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm font-medium">Type the challenge name to confirm deletion</span>
+                  <input
+                    value={confirmName}
+                    onChange={e => setConfirmName(e.target.value)}
+                    placeholder={modalAssessment.title}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                  <span className="text-xs text-gray-500">Exact match required: “{modalAssessment.title}”</span>
+                </label>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              {showDeleteConfirm ? (
+                <button
+                  type="button"
+                  onClick={handleModalDelete}
+                  disabled={deleting || confirmName !== modalAssessment.title}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Confirm Delete"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-md border border-red-200"
+                >
+                  Delete
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                {!showDeleteConfirm ? (
+                  <button
+                    type="button"
+                    onClick={handleModalOverwrite}
+                    disabled={saving}
+                    className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-md disabled:opacity-50"
+                  >
+                    {saving ? "Overwriting…" : "Overwrite Repo"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

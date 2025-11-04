@@ -15,6 +15,15 @@ class AssessmentCreate(BaseModel):
     complete_within_hours: int
 
 
+class AssessmentUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    instructions: str | None = None
+    seed_repo_url: HttpUrl | None = None
+    start_within_hours: int | None = None
+    complete_within_hours: int | None = None
+
+
 class AssessmentOut(BaseModel):
     id: UUID
     title: str

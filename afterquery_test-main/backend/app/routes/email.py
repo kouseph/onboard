@@ -27,9 +27,9 @@ def followup_email_html(candidate_name: str | None) -> str:
     return f"""
     <p>Hi {name},</p>
     <p>Thanks for your submission. We'd like to schedule a follow-up interview.</p>
-    <p>Please reply with your availability.</p>
+    <p>Please reply with your availability with the following link <\p>
     """
-
+    # <p>Please reply with your availability with the following link <a href="{}">{Availability}</a>.</p>
 
 @router.post("/send-invite/{invite_id}")
 def send_invite_email(invite_id: str, db: Session = Depends(get_db)):

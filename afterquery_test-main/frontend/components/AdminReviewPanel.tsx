@@ -25,6 +25,7 @@ export default function AdminReviewPanel({ data }: { data: ReviewData }) {
   const [savingOverall, setSavingOverall] = useState(false);
   const [overallComments, setOverallComments] = useState<any[]>([]);
   const [overallLoading, setOverallLoading] = useState(true);
+  const [sendingInlineComments, setSendingInlineComments] = useState(false);
 
   useEffect(() => {
     setFollowupsLoading(true);
@@ -160,7 +161,35 @@ export default function AdminReviewPanel({ data }: { data: ReviewData }) {
         )}
       </section>
       <section className="rounded bg-white p-4 shadow-sm border">
-        <h3 className="font-semibold mb-2 text-lg">Diff vs Seed (main)</h3>
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="font-semibold text-lg">Diff vs Seed (main)</h3>
+          {inlineComments.length > 0 && (
+            <button
+              onClick={async () => {
+                setSendingInlineComments(true);
+                try {
+                  const response = await fetch(`${API_BASE_URL}/api/review/send-inline-comments/${invite.id}`, {
+                    method: "POST",
+                  });
+                  if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || "Failed to send email");
+                  }
+                  alert(`Email sent successfully! Sent ${inlineComments.length} inline comments to ${candidate.email}`);
+                } catch (e: any) {
+                  alert(`Failed to send email: ${e?.message || "Unknown error"}`);
+                } finally {
+                  setSendingInlineComments(false);
+                }
+              }}
+              disabled={sendingInlineComments}
+              className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+              title={`Send inline comments to ${candidate.email}`}
+            >
+              {sendingInlineComments ? "Sending..." : "Send Inline Comments via Email"}
+            </button>
+          )}
+        </div>
         {diffLoading ? (
           <div className="text-gray-400">Loading…</div>
         ) : diffFiles.length === 0 ? (
@@ -168,42 +197,20 @@ export default function AdminReviewPanel({ data }: { data: ReviewData }) {
         ) : (
           <ul className="text-sm space-y-4">
             {diffFiles.map((f) => (
-              <li key={f.filename} className="border rounded p-3">
-                <div className="flex justify-between text-sm font-medium mb-2">
-                  <span className="font-mono text-blue-600">{f.filename}</span>
-                  <span className="text-gray-500">+{f.additions} -{f.deletions} · {f.status}</span>
-                </div>
-                {f.patch ? (
-                  <pre className="text-xs overflow-auto bg-gray-50 border rounded p-2 whitespace-pre-wrap">{f.patch}</pre>
-                ) : (
-                  <div className="text-xs text-gray-400">No patch available.</div>
-                )}
-                <div className="mt-3">
-                  <div className="font-medium mb-1">Inline Comments</div>
-                  {inlineLoading ? (
-                    <div className="text-xs text-gray-400">Loading…</div>
-                  ) : (
-                    <ul className="text-xs space-y-1">
-                      {inlineComments.filter((c) => c.file_path === f.filename).map((c) => (
-                        <li key={c.id} className="flex justify-between gap-2">
-                          <span className="text-gray-700">{c.message}</span>
-                          <span className="text-gray-400">{c.line != null ? `L${c.line}` : ''} {new Date(c.created_at).toLocaleString()}</span>
-                        </li>
-                      ))}
-                      {inlineComments.filter((c) => c.file_path === f.filename).length === 0 ? (
-                        <li className="text-gray-400">No comments yet.</li>
-                      ) : null}
-                    </ul>
-                  )}
-                  <InlineCommentForm inviteId={invite.id} filePath={f.filename} onAdded={() => {
-                    setInlineLoading(true);
-                    fetch(`${API_BASE_URL}/api/review/inline-comments/${invite.id}`)
-                      .then((r) => r.json())
-                      .then(setInlineComments)
-                      .finally(() => setInlineLoading(false));
-                  }} />
-                </div>
-              </li>
+              <DiffFileBlock
+                key={f.filename}
+                file={f}
+                inviteId={invite.id}
+                inlineComments={inlineComments.filter((c) => c.file_path === f.filename)}
+                inlineLoading={inlineLoading}
+                onRefreshComments={async () => {
+                  setInlineLoading(true);
+                  fetch(`${API_BASE_URL}/api/review/inline-comments/${invite.id}`)
+                    .then((r) => r.json())
+                    .then(setInlineComments)
+                    .finally(() => setInlineLoading(false));
+                }}
+              />
             ))}
           </ul>
         )}
@@ -266,10 +273,16 @@ export default function AdminReviewPanel({ data }: { data: ReviewData }) {
   );
 }
 
-function InlineCommentForm({ inviteId, filePath, onAdded }: { inviteId: string; filePath: string; onAdded: () => void }) {
+function InlineCommentForm({ inviteId, filePath, onAdded, prefillLine }: { inviteId: string; filePath: string; onAdded: () => void; prefillLine?: number | null }) {
   const [message, setMessage] = useState("");
   const [line, setLine] = useState<string>("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (prefillLine != null) {
+      setLine(String(prefillLine));
+    }
+  }, [prefillLine]);
 
   return (
     <form
@@ -305,5 +318,165 @@ function InlineCommentForm({ inviteId, filePath, onAdded }: { inviteId: string; 
       />
       <button type="submit" disabled={saving || !message.trim()} className="px-2 py-1 rounded bg-gray-900 text-white text-xs disabled:bg-gray-400">{saving ? "Adding…" : "Comment"}</button>
     </form>
+  );
+}
+
+function DiffFileBlock({ file, inviteId, inlineComments, inlineLoading, onRefreshComments }: { file: any; inviteId: string; inlineComments: any[]; inlineLoading: boolean; onRefreshComments: () => void }) {
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+
+  return (
+    <li className="border rounded p-3">
+      <div className="flex justify-between text-sm font-medium mb-2">
+        <span className="font-mono text-blue-600">{file.filename}</span>
+        <span className="text-gray-500">+{file.additions} -{file.deletions} · {file.status}</span>
+      </div>
+      {file.patch ? (
+        <DiffViewer patch={file.patch} onPickLine={(ln) => setSelectedLine(ln)} />
+      ) : (
+        <div className="text-xs text-gray-400">No patch available.</div>
+      )}
+      <div className="mt-3">
+        <div className="font-medium mb-1">Inline Comments</div>
+        {inlineLoading ? (
+          <div className="text-xs text-gray-400">Loading…</div>
+        ) : (
+          <ul className="text-xs space-y-1">
+            {inlineComments.map((c) => (
+              <li key={c.id} className="flex justify-between items-center gap-2">
+                <div className="flex-1">
+                  <span className="text-gray-700">{c.message}</span>
+                  <span className="text-gray-400 ml-2">{c.line != null ? `L${c.line}` : ''} {new Date(c.created_at).toLocaleString()}</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!confirm("Are you sure you want to delete this comment?")) return;
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/api/review/inline-comments/${c.id}`, {
+                        method: "DELETE",
+                      });
+                      if (!response.ok) {
+                        throw new Error("Failed to delete comment");
+                      }
+                      onRefreshComments();
+                    } catch (e: any) {
+                      alert(`Failed to delete comment: ${e?.message || "Unknown error"}`);
+                    }
+                  }}
+                  className="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs font-medium"
+                  title="Delete comment"
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+            {inlineComments.length === 0 ? (
+              <li className="text-gray-400">No comments yet.</li>
+            ) : null}
+          </ul>
+        )}
+        <InlineCommentForm inviteId={inviteId} filePath={file.filename} onAdded={onRefreshComments} prefillLine={selectedLine} />
+      </div>
+    </li>
+  );
+}
+
+function DiffViewer({ patch, onPickLine }: { patch: string; onPickLine: (line: number) => void }) {
+  // Parse unified diff and render with old/new line numbers.
+  // We display new-file line numbers for additions and context lines; deletions show old-file numbers.
+  const lines = patch.split("\n");
+  let oldLine = 0;
+  let newLine = 0;
+  const rendered = [] as any[];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (raw.startsWith("@@")) {
+      // Hunk header: @@ -a,b +c,d @@
+      const m = raw.match(/@@\s-([0-9]+)(?:,[0-9]+)?\s\+([0-9]+)(?:,[0-9]+)?\s@@/);
+      if (m) {
+        oldLine = parseInt(m[1], 10);
+        newLine = parseInt(m[2], 10);
+      }
+      rendered.push(
+        <div key={`h-${i}`} className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-[11px] font-mono overflow-auto">
+          {raw}
+        </div>
+      );
+      continue;
+    }
+
+    let type: "add" | "del" | "ctx" = "ctx";
+    let displayOld: number | null = null;
+    let displayNew: number | null = null;
+
+    if (raw.startsWith("+")) {
+      type = "add";
+      displayOld = null;
+      displayNew = newLine;
+      newLine += 1;
+    } else if (raw.startsWith("-")) {
+      type = "del";
+      displayOld = oldLine;
+      displayNew = null;
+      oldLine += 1;
+    } else {
+      type = "ctx";
+      displayOld = oldLine;
+      displayNew = newLine;
+      oldLine += 1;
+      newLine += 1;
+    }
+
+    // Build line number cells
+    const oldCell = (
+      <span className="w-10 text-right pr-2 text-[11px] text-gray-400 select-none">
+        {displayOld != null ? displayOld : ''}
+      </span>
+    );
+    const newCell = (
+      <span className="w-10 text-right pr-2 text-[11px] text-gray-400 select-none">
+        {displayNew != null ? displayNew : ''}
+      </span>
+    );
+
+    const bg = type === "add" ? "bg-green-50" : type === "del" ? "bg-red-50" : "";
+    const sign = raw[0] || " ";
+    const content = raw.startsWith("+") || raw.startsWith("-") ? raw.slice(1) : raw;
+
+    rendered.push(
+      <div
+        key={`l-${i}`}
+        className={`flex items-start font-mono text-[12px] ${bg} border-b border-gray-100`}
+      >
+        {oldCell}
+        {newCell}
+        <span className="w-4 text-center text-gray-400 select-none">{sign}</span>
+        <button
+          type="button"
+          className="text-left whitespace-pre-wrap flex-1 px-2 py-0.5 hover:bg-yellow-50"
+          onClick={() => {
+            // Prefer new-file line for commenting when available; fallback to old.
+            const ln = displayNew != null ? displayNew : (displayOld != null ? displayOld : 0);
+            if (ln) onPickLine(ln);
+          }}
+          title={displayNew != null ? `Comment on L${displayNew}` : (displayOld != null ? `Comment on L${displayOld}` : undefined)}
+        >
+          {content}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-xs overflow-auto bg-gray-50 border rounded">
+      {/* header row */}
+      <div className="flex items-center px-2 py-1 border-b border-gray-200 text-[11px] text-gray-500 font-mono">
+        <span className="w-10 pr-2 text-right">old</span>
+        <span className="w-10 pr-2 text-right">new</span>
+        <span className="w-4 text-center">±</span>
+        <span className="pl-2">code</span>
+      </div>
+      {rendered}
+    </div>
   );
 }

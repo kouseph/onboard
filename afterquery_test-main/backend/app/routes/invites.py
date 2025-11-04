@@ -103,3 +103,34 @@ def list_invites_with_details(db: Session = Depends(get_db)):
         )
     return results
 
+
+@router.delete("/{invite_id}")
+def cancel_invite(invite_id: str, db: Session = Depends(get_db)):
+    """
+    Cancel/delete an assignment invite.
+    This will cascade delete related records (candidate_repo, tokens, etc.).
+    """
+    try:
+        print('this is good!')
+        invite_uuid = uuid.UUID(invite_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid invite ID format")
+    
+    # Use filter to ensure proper UUID comparison
+    invite = db.query(models.AssessmentInvite).filter(models.AssessmentInvite.id == invite_uuid).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    
+    # Optional: prevent deletion of submitted assessments for audit trail
+    # Uncomment the following lines if you want to keep submitted assessments:
+    # if invite.status == models.InviteStatus.submitted:
+    #     raise HTTPException(
+    #         status_code=400, 
+    #         detail="Cannot cancel a submitted assessment. Contact an administrator if needed."
+    #     )
+    
+    db.delete(invite)
+    db.commit()
+    
+    return {"status": "deleted", "message": "Assignment cancelled successfully"}
+
