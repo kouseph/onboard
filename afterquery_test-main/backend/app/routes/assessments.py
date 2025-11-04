@@ -138,36 +138,10 @@ def delete_assessment(assessment_id: str, db: Session = Depends(get_db)):
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
+    # Rely on database-level ON DELETE CASCADE constraints defined in schema.sql.
+    # Deleting the assessment will cascade to invites, seed repos, candidate repos,
+    # access tokens, submissions, comments, and inline comments.
     try:
-        # Defensive cascade: explicitly remove dependent rows to avoid FK issues
-        # 1) Find invites for this assessment
-        invites = db.query(models.AssessmentInvite).filter(models.AssessmentInvite.assessment_id == assessment.id).all()
-        invite_ids = [i.id for i in invites]
-
-        if invite_ids:
-            # Delete review inline comments
-            db.query(models.ReviewInlineComment).filter(models.ReviewInlineComment.invite_id.in_(invite_ids)).delete(synchronize_session=False)
-            # Delete review comments
-            db.query(models.ReviewComment).filter(models.ReviewComment.invite_id.in_(invite_ids)).delete(synchronize_session=False)
-            # Delete follow-up emails
-            db.query(models.FollowUpEmail).filter(models.FollowUpEmail.invite_id.in_(invite_ids)).delete(synchronize_session=False)
-            # Delete submissions
-            db.query(models.Submission).filter(models.Submission.invite_id.in_(invite_ids)).delete(synchronize_session=False)
-
-            # Candidate repos and tokens
-            cand_repos = db.query(models.CandidateRepo).filter(models.CandidateRepo.invite_id.in_(invite_ids)).all()
-            cand_repo_ids = [cr.id for cr in cand_repos]
-            if cand_repo_ids:
-                db.query(models.RepoAccessToken).filter(models.RepoAccessToken.candidate_repo_id.in_(cand_repo_ids)).delete(synchronize_session=False)
-                db.query(models.CandidateRepo).filter(models.CandidateRepo.id.in_(cand_repo_ids)).delete(synchronize_session=False)
-
-            # Finally, delete invites
-            db.query(models.AssessmentInvite).filter(models.AssessmentInvite.id.in_(invite_ids)).delete(synchronize_session=False)
-
-        # Delete seed repo row if any
-        db.query(models.SeedRepo).filter(models.SeedRepo.assessment_id == assessment.id).delete(synchronize_session=False)
-
-        # Delete the assessment itself
         db.delete(assessment)
         db.commit()
         return {"ok": True}
